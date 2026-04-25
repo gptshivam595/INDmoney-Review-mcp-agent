@@ -151,7 +151,7 @@ def test_summarize_run_retries_invalid_quotes_and_persists_report(
 
     monkeypatch.setattr(
         "agent.summarization.service.load_summarization_provider",
-        lambda _provider, _model: provider,
+        lambda _provider, _model, _timeout: provider,
     )
 
     result = summarize_run(
@@ -185,7 +185,7 @@ def test_summarize_run_fails_when_cost_cap_is_exceeded(
 
     monkeypatch.setattr(
         "agent.summarization.service.load_summarization_provider",
-        lambda _provider, _model: ExpensiveProvider(),
+        lambda _provider, _model, _timeout: ExpensiveProvider(),
     )
 
     try:

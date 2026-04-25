@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -235,8 +236,8 @@ class RuntimeSettings(BaseSettings):
     @classmethod
     def validate_llm_provider(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized not in {"heuristic"}:
-            msg = "llm_provider must currently be 'heuristic'"
+        if normalized not in {"heuristic", "openai"}:
+            msg = "llm_provider must be 'heuristic' or 'openai'"
             raise ValueError(msg)
         return normalized
 
@@ -263,6 +264,31 @@ class RuntimeSettings(BaseSettings):
             msg = "llm_cost_cap_usd must be zero or greater"
             raise ValueError(msg)
         return value
+
+    @model_validator(mode="after")
+    def apply_llm_defaults(self) -> RuntimeSettings:
+        explicit_provider = _lookup_env_value("PULSE_LLM_PROVIDER")
+        legacy_provider = _lookup_env_value("PULSE_SUMMARIZATION_PROVIDER")
+        explicit_model = _lookup_env_value("PULSE_LLM_MODEL")
+        legacy_model = _lookup_env_value("PULSE_SUMMARIZATION_MODEL")
+        openai_api_key = _lookup_env_value("OPENAI_API_KEY")
+
+        if explicit_provider:
+            self.llm_provider = explicit_provider.strip().lower()
+        elif openai_api_key:
+            self.llm_provider = "openai"
+        elif legacy_provider:
+            self.llm_provider = legacy_provider.strip().lower()
+
+        if explicit_model:
+            self.llm_model = explicit_model.strip()
+        elif legacy_model:
+            self.llm_model = legacy_model.strip()
+
+        if self.llm_provider == "openai" and self.llm_model == "heuristic-v1":
+            self.llm_model = "gpt-4.1-mini"
+
+        return self
 
     def resolve_products_path(self) -> Path:
         if self.products_path.is_absolute():
@@ -295,3 +321,24 @@ def load_product_catalog(products_path: Path) -> ProductCatalog:
         payload = yaml.safe_load(handle) or {}
 
     return ProductCatalog.model_validate(payload)
+
+
+def _lookup_env_value(key: str) -> str | None:
+    direct_value = os.getenv(key)
+    if direct_value:
+        return direct_value
+
+    env_path = Path.cwd() / ".env"
+    if not env_path.exists():
+        return None
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        if name.strip() != key:
+            continue
+        cleaned = value.strip().strip("'").strip('"')
+        return cleaned or None
+    return None

@@ -47,7 +47,11 @@ def summarize_run(
             msg = "No clusters available for summarization"
             raise RuntimeError(msg)
 
-        provider = load_summarization_provider(settings.llm_provider, settings.llm_model)
+        provider = load_summarization_provider(
+            settings.llm_provider,
+            settings.llm_model,
+            settings.llm_timeout_seconds,
+        )
         usage = LLMUsage(provider=settings.llm_provider, model=settings.llm_model)
         top_themes: list[Theme] = []
         all_quotes: list[str] = []
