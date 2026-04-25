@@ -1,13 +1,13 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Weekly Product Review Pulse",
-  description: "Operator dashboard for the weekly product review agent.",
+  title: "INDmoney Command Center",
+  description: "Dark operations dashboard for the INDMoney review pulse agent.",
 };
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html className="dark" lang="en">
       <body>{children}</body>
     </html>
   );

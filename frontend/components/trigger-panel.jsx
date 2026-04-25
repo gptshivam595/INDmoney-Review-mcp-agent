@@ -5,6 +5,10 @@ import { useState } from "react";
 const defaultWeek = new Date().toISOString().slice(0, 10);
 const operatorProductKey = "indmoney";
 
+function icon(name) {
+  return <span className="material-symbols-outlined">{name}</span>;
+}
+
 export function TriggerPanel({ apiBaseUrl, scheduler }) {
   const [isoWeek, setIsoWeek] = useState("");
   const [draftOnly, setDraftOnly] = useState(true);
@@ -31,7 +35,7 @@ export function TriggerPanel({ apiBaseUrl, scheduler }) {
         throw new Error(payload.detail || "Request failed");
       }
       setStatus(
-        `Queued INDMoney flow ${payload.job.job_id}. Watch the Background Jobs and Delivery Audit panels for progress.`,
+        `Queued INDMoney flow ${payload.job.job_id}. Watch Background Jobs and Delivery Audit for progress.`,
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unknown request failure");
@@ -73,62 +77,89 @@ export function TriggerPanel({ apiBaseUrl, scheduler }) {
   }
 
   return (
-    <section className="panel accent-panel">
-      <div className="panel-header">
-        <p className="eyebrow">INDMoney Control</p>
-        <h2>Run one flow now or control the periodic scheduler for INDMoney only</h2>
+    <section className="control-panel" id="scheduler">
+      <div className="panel-chrome" aria-hidden="true" />
+      <div className="control-heading">
+        <div>
+          <p className="eyebrow">Flow Control</p>
+          <h2>
+            {icon("route")}
+            Run one flow now or control the periodic scheduler
+          </h2>
+          <p className="muted">
+            INDMoney only. One-shot runs can draft first, while scheduler state is saved through
+            the live backend.
+          </p>
+        </div>
+        <div className={scheduler?.enabled ? "scheduler-led active" : "scheduler-led"}>
+          <span aria-hidden="true" />
+          {scheduler?.enabled ? "Scheduler Online" : "Scheduler Paused"}
+        </div>
       </div>
-      <div className="form-grid compact">
-        <label>
-          <span>Product</span>
-          <input value="INDMoney" disabled readOnly />
-        </label>
-        <label>
-          <span>ISO week</span>
-          <input
-            value={isoWeek}
-            onChange={(event) => setIsoWeek(event.target.value)}
-            placeholder="2026-W17"
-          />
-        </label>
-        <label className="toggle-row">
-          <span>Draft only</span>
+
+      <div className="control-body">
+        <div className="control-fields">
+          <label>
+            <span>Product Selection</span>
+            <div className="field-shell disabled-field">
+              {icon("account_balance_wallet")}
+              <input value="INDmoney Flow" disabled readOnly />
+            </div>
+          </label>
+          <label>
+            <span>Target Period</span>
+            <div className="field-shell">
+              {icon("calendar_month")}
+              <input
+                value={isoWeek}
+                onChange={(event) => setIsoWeek(event.target.value)}
+                placeholder="2026-W17 or leave current"
+              />
+            </div>
+          </label>
+          <label>
+            <span>Delivery Mode</span>
+            <button
+              type="button"
+              className={draftOnly ? "mode-toggle active" : "mode-toggle"}
+              onClick={() => setDraftOnly((value) => !value)}
+            >
+              {icon(draftOnly ? "edit_note" : "send")}
+              {draftOnly ? "Draft Only" : "Send Enabled"}
+            </button>
+          </label>
+        </div>
+
+        <div className="control-actions">
           <button
             type="button"
-            className={draftOnly ? "toggle active" : "toggle"}
-            onClick={() => setDraftOnly((value) => !value)}
+            className="secondary-button"
+            disabled={busyAction !== ""}
+            onClick={toggleScheduler}
           >
-            {draftOnly ? "Enabled" : "Disabled"}
+            {icon("event_repeat")}
+            {busyAction === "scheduler"
+              ? "Updating..."
+              : scheduler?.enabled
+                ? "Disable Periodic Scheduler"
+                : "Enable Periodic Scheduler"}
           </button>
-        </label>
+          <button
+            type="button"
+            className="primary-button"
+            disabled={busyAction !== ""}
+            onClick={triggerSingleRun}
+          >
+            {icon("play_arrow")}
+            {busyAction === "run" ? "Submitting..." : "Run INDMoney Flow Once"}
+          </button>
+        </div>
       </div>
-      <div className="button-row">
-        <button
-          type="button"
-          className="primary-button"
-          disabled={busyAction !== ""}
-          onClick={triggerSingleRun}
-        >
-          {busyAction === "run" ? "Submitting..." : "Run INDMoney Flow Once"}
-        </button>
-        <button
-          type="button"
-          className="secondary-button"
-          disabled={busyAction !== ""}
-          onClick={toggleScheduler}
-        >
-          {busyAction === "scheduler"
-            ? "Updating..."
-            : scheduler?.enabled
-              ? "Disable Periodic Scheduler"
-              : "Enable Periodic Scheduler"}
-        </button>
+
+      <div className="control-footer">
+        <span>Browser date reference: {defaultWeek}</span>
+        <span>Recipient: gptshivam595@gmail.com</span>
       </div>
-      <p className="muted">
-        One-shot flow runs ingestion, analysis, OpenAI summarization, render, Docs publish, and
-        Gmail draft/send for INDMoney. The periodic scheduler control updates the backend schedule
-        state for INDMoney only. Browser date reference: {defaultWeek}.
-      </p>
       {status ? <p className="status-banner">{status}</p> : null}
     </section>
   );
