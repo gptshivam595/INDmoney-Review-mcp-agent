@@ -652,21 +652,21 @@ code,
 
 .control-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 22px;
-  align-items: end;
   padding-top: 22px;
 }
 
 .control-fields {
   display: grid;
-  grid-template-columns: minmax(210px, 0.92fr) minmax(210px, 0.92fr) minmax(180px, 0.55fr);
+  grid-template-columns: minmax(230px, 1fr) minmax(230px, 1fr) minmax(220px, 0.78fr);
   gap: 18px;
 }
 
 .control-fields label {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .control-fields label > span {
@@ -712,6 +712,8 @@ code,
 
 .mode-toggle {
   display: flex;
+  width: 100%;
+  min-width: 0;
   min-height: 48px;
   align-items: center;
   justify-content: center;
@@ -721,6 +723,7 @@ code,
   color: var(--text-soft);
   background: rgba(14, 14, 14, 0.54);
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .mode-toggle.active {
@@ -739,6 +742,7 @@ code,
 .primary-button,
 .secondary-button {
   display: inline-flex;
+  flex: 0 1 auto;
   min-height: 48px;
   align-items: center;
   justify-content: center;
@@ -749,6 +753,7 @@ code,
   font-weight: 900;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .primary-button {
