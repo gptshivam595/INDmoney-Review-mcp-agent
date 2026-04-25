@@ -1,0 +1,10 @@
+INDMoney weekly review pulse for 2026-W17
+Period: 2026-02-16 to 2026-04-26
+
+Top themes:
+- Customer feedback around investment, best: Customer feedback around investment, best appears across 7 reviews. Representative signal: Good App for investment.
+- Customer feedback around stop, much: Customer feedback around stop, much appears across 3 reviews. Representative signal: I love the app. Thank you so much to everyone. The app is soo much faster download. But now download faster and more sta.
+
+Read full report: {{DOC_SECTION_LINK}}
+Run id: d253b601a49da507944aff4e2b2cf40b297f366d
+Run anchor: pulse-indmoney-2026-W17

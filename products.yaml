@@ -1,0 +1,24 @@
+products:
+  - product_key: indmoney
+    display_name: INDMoney
+    appstore_app_id: "1450178837"
+    playstore_package: "in.indwealth"
+    country_code: IN
+    active: true
+    stakeholders:
+      to:
+        - gptshivam595@gmail.com
+      cc:
+        - gptshivam595@gmail.com
+      bcc: []
+  - product_key: groww
+    display_name: Groww
+    appstore_app_id: "1404871703"
+    playstore_package: "com.nextbillion.groww"
+    country_code: IN
+    active: true
+    stakeholders:
+      to:
+        - leadership@example.com
+      cc: []
+      bcc: []

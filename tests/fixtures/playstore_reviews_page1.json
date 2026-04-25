@@ -1,0 +1,18 @@
+[
+  {
+    "reviewId": "playstore-review-1",
+    "score": 1,
+    "title": "Support is slow",
+    "content": "Customer support is slow. Aadhaar 1234 5678 9012 should be hidden.",
+    "at": "2026-04-22T09:30:00+05:30",
+    "reviewCreatedVersion": "1.0.0"
+  },
+  {
+    "reviewId": "playstore-review-old",
+    "score": 4,
+    "title": "Old review",
+    "content": "Old review should be filtered out.",
+    "at": "2025-11-05T09:30:00+05:30",
+    "reviewCreatedVersion": "0.9.0"
+  }
+]

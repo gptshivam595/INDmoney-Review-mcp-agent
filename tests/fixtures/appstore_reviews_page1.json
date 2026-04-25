@@ -1,0 +1,45 @@
+{
+  "feed": {
+    "entry": [
+      {
+        "im:name": {
+          "label": "INDMoney"
+        }
+      },
+      {
+        "id": {
+          "label": "appstore-review-1"
+        },
+        "title": {
+          "label": "Great insights"
+        },
+        "content": {
+          "label": "Helpful app. Reach me at test.user@example.com or +91 9876543210."
+        },
+        "im:rating": {
+          "label": "5"
+        },
+        "updated": {
+          "label": "2026-04-23T10:00:00+00:00"
+        }
+      },
+      {
+        "id": {
+          "label": "appstore-review-old"
+        },
+        "title": {
+          "label": "Too old"
+        },
+        "content": {
+          "label": "Old review should be ignored."
+        },
+        "im:rating": {
+          "label": "2"
+        },
+        "updated": {
+          "label": "2025-12-20T10:00:00+00:00"
+        }
+      }
+    ]
+  }
+}

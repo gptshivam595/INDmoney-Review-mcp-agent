@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: weekly-product-review-pulse-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PULSE_DATABASE_PATH
+        value: /app/data/pulse.db
+      - key: PULSE_PRODUCTS_PATH
+        value: /app/products.yaml
+      - key: PULSE_TIMEZONE
+        value: Asia/Kolkata
+      - key: PULSE_CONFIRM_SEND
+        value: "false"
+      - key: PULSE_SCHEDULER_ENABLED
+        value: "false"
+      - key: PULSE_SCHEDULER_DAY_OF_WEEK
+        value: "0"
+      - key: PULSE_SCHEDULER_HOUR_24
+        value: "9"
+      - key: PULSE_SCHEDULER_MINUTE
+        value: "0"
+      - key: GOOGLE_TOKEN_PATH
+        value: /app/data/token.json
+    disk:
+      name: pulse-data
+      mountPath: /app/data
+      sizeGB: 1
