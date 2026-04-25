@@ -290,6 +290,12 @@ class RuntimeSettings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def normalize_runtime_endpoints(self) -> RuntimeSettings:
+        self.docs_mcp_base_url = _normalize_loopback_base_url(self.docs_mcp_base_url)
+        self.gmail_mcp_base_url = _normalize_loopback_base_url(self.gmail_mcp_base_url)
+        return self
+
     def resolve_products_path(self) -> Path:
         if self.products_path.is_absolute():
             return self.products_path
@@ -302,9 +308,9 @@ class RuntimeSettings(BaseSettings):
 
     def resolve_api_cors_origins(self) -> list[str]:
         return [
-            origin.strip()
+            origin.strip().strip('"').strip("'")
             for origin in self.api_cors_origins.split(",")
-            if origin.strip()
+            if origin.strip().strip('"').strip("'")
         ]
 
 
@@ -342,3 +348,13 @@ def _lookup_env_value(key: str) -> str | None:
         cleaned = value.strip().strip("'").strip('"')
         return cleaned or None
     return None
+
+
+def _normalize_loopback_base_url(url: str) -> str:
+    normalized = url.strip()
+    current_port = os.getenv("PORT")
+    if not current_port:
+        return normalized
+    if normalized in {"http://127.0.0.1:8000", "http://localhost:8000"}:
+        return f"http://127.0.0.1:{current_port}"
+    return normalized

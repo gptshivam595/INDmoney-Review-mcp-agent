@@ -98,3 +98,23 @@ def test_runtime_settings_reads_legacy_summarization_env(monkeypatch, tmp_path: 
 
     assert settings.llm_provider == "heuristic"
     assert settings.llm_model == "legacy-model"
+
+
+def test_runtime_settings_normalizes_railway_loopback_and_cors(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PORT", "5123")
+    monkeypatch.setenv("PULSE_DOCS_MCP_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("PULSE_GMAIL_MCP_BASE_URL", "http://localhost:8000")
+    monkeypatch.setenv(
+        "PULSE_API_CORS_ORIGINS",
+        '"https://in-dmoney-review-mcp-agent.vercel.app,http://localhost:3000"',
+    )
+
+    settings = RuntimeSettings()
+
+    assert settings.docs_mcp_base_url == "http://127.0.0.1:5123"
+    assert settings.gmail_mcp_base_url == "http://127.0.0.1:5123"
+    assert settings.resolve_api_cors_origins() == [
+        "https://in-dmoney-review-mcp-agent.vercel.app",
+        "http://localhost:3000",
+    ]
