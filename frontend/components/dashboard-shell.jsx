@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 import { TriggerPanel } from "./trigger-panel";
 
+const operatorProductKey = "indmoney";
+
 function StatCard({ label, value, tone = "default", helper = "" }) {
   return (
     <article className={`stat-card ${tone}`}>
@@ -209,6 +211,33 @@ function DeliveryTable({ events = [] }) {
   );
 }
 
+function WorkspacePanel({ checks = {} }) {
+  const docs = checks?.docs;
+  const gmail = checks?.gmail;
+  const entries = [docs, gmail].filter(Boolean);
+
+  if (!entries.length) {
+    return <p className="empty-state">No Google Workspace checks available.</p>;
+  }
+
+  return (
+    <div className="service-grid">
+      {entries.map((entry) => (
+        <article key={entry.label} className="service-card">
+          <div className="service-card-top">
+            <div>
+              <p className="eyebrow small">{entry.label}</p>
+              <h3>{entry.status}</h3>
+            </div>
+            <span className={`pill pill-${entry.status}`}>{entry.status}</span>
+          </div>
+          <p className="muted">{entry.detail}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 export function DashboardShell({ apiBaseUrl }) {
   const [payload, setPayload] = useState(null);
   const [error, setError] = useState("");
@@ -251,12 +280,14 @@ export function DashboardShell({ apiBaseUrl }) {
   const counts = payload?.counts || {};
   const auth = payload?.google_auth || {};
   const scheduler = payload?.scheduler || {};
-  const products = payload?.products || [];
+  const workspaceChecks = payload?.mcp_checks || {};
   const services = payload?.services || [];
   const issues = payload?.issues || { warnings: [], errors: [] };
-  const fleet = payload?.fleet || [];
-  const runs = payload?.recent_runs || [];
-  const jobs = payload?.jobs || [];
+  const fleet = (payload?.fleet || []).filter((product) => product.product_key === operatorProductKey);
+  const runs = (payload?.recent_runs || []).filter((run) => run.product_key === operatorProductKey);
+  const jobs = (payload?.jobs || []).filter((job) => {
+    return !job.product_key || job.product_key === operatorProductKey;
+  });
   const events = payload?.recent_delivery_events || [];
 
   return (
@@ -302,10 +333,11 @@ export function DashboardShell({ apiBaseUrl }) {
           <SectionHeader
             eyebrow="Scheduler"
             title={scheduler.status || "inactive"}
-            description="Recurring cadence is metadata-driven here; Railway cron or another external scheduler should drive the actual periodic trigger."
+            description="Recurring cadence is controlled here for INDMoney only. Railway cron or another external scheduler should still drive the actual periodic trigger."
           />
           <div className="scheduler-grid">
             <StatCard label="Cadence" value={scheduler.cadence_label || "Not configured"} tone="amber" />
+            <StatCard label="Target" value={scheduler.target_product_key || "indmoney"} />
             <StatCard label="Timezone" value={scheduler.timezone || "n/a"} />
             <StatCard label="Next local run" value={scheduler.next_run_local || "Not scheduled"} tone="teal" />
             <StatCard label="Next UTC run" value={scheduler.next_run_utc || "Not scheduled"} />
@@ -322,14 +354,14 @@ export function DashboardShell({ apiBaseUrl }) {
         </section>
       </section>
 
-      <TriggerPanel apiBaseUrl={apiBaseUrl} products={products} />
+      <TriggerPanel apiBaseUrl={apiBaseUrl} scheduler={scheduler} />
 
       <section className="content-grid">
         <section className="panel">
           <SectionHeader
-            eyebrow="Product Fleet"
-            title="App coverage and latest run state"
-            description="This gives you a quick product-by-product view of what is active and what last happened."
+            eyebrow="INDMoney Status"
+            title="Latest INDMoney run state"
+            description="This shows the current operator view for the only product exposed in this dashboard."
           />
           <FleetGrid fleet={fleet} />
         </section>
@@ -364,6 +396,15 @@ export function DashboardShell({ apiBaseUrl }) {
             />
           </div>
         </section>
+      </section>
+
+      <section className="panel">
+        <SectionHeader
+          eyebrow="Google Workspace"
+          title="Docs and Gmail live probe status"
+          description="These checks surface Google Docs, Gmail, auth, and MCP-style delivery issues as soon as the backend can detect them."
+        />
+        <WorkspacePanel checks={workspaceChecks} />
       </section>
 
       <section className="content-grid">

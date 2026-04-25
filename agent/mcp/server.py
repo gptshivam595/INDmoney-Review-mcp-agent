@@ -30,9 +30,12 @@ from agent.time_utils import scheduler_summary
 app = FastAPI()
 DEFAULT_NOTIFICATION_EMAIL = "gptshivam595@gmail.com"
 GOOGLE_DOC_MIME_TYPE = "application/vnd.google-apps.document"
+OPERATOR_PRODUCT_KEY = "indmoney"
 JOB_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pulse-job")
 JOB_LOCK = Lock()
 JOB_REGISTRY: dict[str, dict[str, object]] = {}
+PROBE_LOCK = Lock()
+PROBE_CACHE: dict[str, object] = {"captured_at": None, "payload": None}
 
 HTTP_500_RESPONSE: dict[int | str, dict[str, Any]] = {
     500: {"description": "Internal server error"}
@@ -138,6 +141,10 @@ class TriggerRunRequest(BaseModel):
 class TriggerWeeklyRequest(BaseModel):
     iso_week: str | None = None
     draft_only: bool = True
+
+
+class SchedulerControlRequest(BaseModel):
+    enabled: bool
 
 
 def _build_recipient_header(primary_to: str) -> str:
@@ -407,9 +414,13 @@ def health():
 @app.get("/api/overview", responses=HTTP_500_RESPONSE)
 def api_overview():
     settings, catalog, database_path = _load_runtime_context()
+    filtered_runs = list_runs(database_path, limit=12, product_key=OPERATOR_PRODUCT_KEY)
     counts = summarize_database_counts(database_path)
-    recent_runs = list_runs(database_path, limit=12)
-    recent_delivery_events = list_delivery_events(database_path, limit=8)
+    recent_delivery_events = [
+        event
+        for event in list_delivery_events(database_path, limit=20)
+        if _delivery_event_matches_product(event, filtered_runs)
+    ][:8]
     scheduler = scheduler_summary(
         enabled=settings.scheduler_enabled,
         timezone_name=settings.timezone,
@@ -417,21 +428,26 @@ def api_overview():
         hour_24=settings.scheduler_hour_24,
         minute=settings.scheduler_minute,
     )
+    scheduler["target_product_key"] = OPERATOR_PRODUCT_KEY
+    mcp_checks = _workspace_probe_snapshot()
     services = _service_health_snapshot(
         settings=settings,
         database_path=database_path,
-        recent_runs=recent_runs,
+        recent_runs=filtered_runs,
+        mcp_checks=mcp_checks,
     )
     issues = _issue_tracker(
         settings=settings,
-        recent_runs=recent_runs,
+        recent_runs=filtered_runs,
         recent_delivery_events=recent_delivery_events,
         services=services,
+        mcp_checks=mcp_checks,
     )
     fleet = _fleet_health_snapshot(
         catalog=catalog,
-        recent_runs=recent_runs,
+        recent_runs=filtered_runs,
     )
+    indmoney_product = catalog.get_product(OPERATOR_PRODUCT_KEY)
     return {
         "service": {
             "status": "ok",
@@ -441,6 +457,7 @@ def api_overview():
         },
         "google_auth": _google_auth_status(),
         "scheduler": scheduler,
+        "mcp_checks": mcp_checks,
         "services": services,
         "issues": issues,
         "fleet": fleet,
@@ -448,14 +465,13 @@ def api_overview():
         "runs_by_status": count_runs_by_status(database_path),
         "products": [
             {
-                "product_key": product.product_key,
-                "display_name": product.display_name,
-                "active": product.active,
-                "stakeholders": product.stakeholders.model_dump(mode="json"),
+                "product_key": indmoney_product.product_key,
+                "display_name": indmoney_product.display_name,
+                "active": indmoney_product.active,
+                "stakeholders": indmoney_product.stakeholders.model_dump(mode="json"),
             }
-            for product in catalog.products
         ],
-        "recent_runs": [entry.model_dump(mode="json") for entry in recent_runs[:8]],
+        "recent_runs": [entry.model_dump(mode="json") for entry in filtered_runs[:8]],
         "recent_delivery_events": [entry.model_dump(mode="json") for entry in recent_delivery_events],
         "jobs": _list_jobs(),
     }
@@ -485,6 +501,35 @@ def api_runs(limit: int = 20, product_key: str | None = None):
 @app.get("/api/jobs", responses=HTTP_500_RESPONSE)
 def api_jobs():
     return {"jobs": _list_jobs()}
+
+
+@app.get("/api/scheduler", responses=HTTP_500_RESPONSE)
+def api_scheduler():
+    settings, _catalog, _database_path = _load_runtime_context()
+    summary = scheduler_summary(
+        enabled=settings.scheduler_enabled,
+        timezone_name=settings.timezone,
+        day_of_week=settings.scheduler_day_of_week,
+        hour_24=settings.scheduler_hour_24,
+        minute=settings.scheduler_minute,
+    )
+    summary["target_product_key"] = OPERATOR_PRODUCT_KEY
+    return summary
+
+
+@app.post("/api/scheduler", responses=HTTP_500_RESPONSE)
+def api_update_scheduler(data: SchedulerControlRequest):
+    settings, _catalog, database_path = _load_runtime_context()
+    _write_scheduler_override(database_path, enabled=data.enabled)
+    summary = scheduler_summary(
+        enabled=data.enabled,
+        timezone_name=settings.timezone,
+        day_of_week=settings.scheduler_day_of_week,
+        hour_24=settings.scheduler_hour_24,
+        minute=settings.scheduler_minute,
+    )
+    summary["target_product_key"] = OPERATOR_PRODUCT_KEY
+    return summary
 
 
 @app.get("/api/completion", responses=HTTP_500_RESPONSE)
@@ -556,14 +601,11 @@ def api_completion():
 @app.post("/api/trigger/run", responses=HTTP_500_RESPONSE)
 def api_trigger_run(data: TriggerRunRequest):
     settings, catalog, _database_path = _load_runtime_context()
-    try:
-        catalog.get_product(data.product_key)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    catalog.get_product(OPERATOR_PRODUCT_KEY)
 
     job_id = _create_job(
         kind="single-run",
-        product_key=data.product_key,
+        product_key=OPERATOR_PRODUCT_KEY,
         iso_week=data.iso_week,
         draft_only=data.draft_only,
     )
@@ -581,8 +623,8 @@ def api_trigger_run(data: TriggerRunRequest):
 def api_trigger_weekly(data: TriggerWeeklyRequest):
     settings, catalog, _database_path = _load_runtime_context()
     job_id = _create_job(
-        kind="weekly-run",
-        product_key=None,
+        kind="periodic-scheduler-run",
+        product_key=OPERATOR_PRODUCT_KEY,
         iso_week=data.iso_week,
         draft_only=data.draft_only,
     )
@@ -606,6 +648,9 @@ def _load_runtime_context():
     database_path = settings.resolve_database_path()
     initialize_database(database_path)
     sync_products(database_path, catalog)
+    scheduler_override = _read_scheduler_override(database_path)
+    if scheduler_override is not None:
+        settings = settings.model_copy(update={"scheduler_enabled": scheduler_override["enabled"]})
     return settings, catalog, database_path
 
 
@@ -631,6 +676,7 @@ def _service_health_snapshot(
     settings,
     database_path: Path,
     recent_runs,
+    mcp_checks,
 ) -> list[dict[str, object]]:
     auth = _google_auth_status()
     recent_failures = [run for run in recent_runs if run.status == "failed"]
@@ -651,31 +697,23 @@ def _service_health_snapshot(
         {
             "key": "docs-delivery",
             "label": "Docs Delivery",
-            "status": "active" if auth["token_available"] else "warning",
-            "detail": (
-                "Google token loaded and Docs publish can proceed."
-                if auth["token_available"]
-                else "Waiting for Google OAuth token before a live append can succeed."
-            ),
+            "status": str(mcp_checks["docs"]["status"]),
+            "detail": str(mcp_checks["docs"]["detail"]),
         },
         {
             "key": "gmail-delivery",
             "label": "Gmail Delivery",
-            "status": "active" if auth["token_available"] else "warning",
-            "detail": (
-                "Google token loaded and Gmail draft/send can proceed."
-                if auth["token_available"]
-                else "Waiting for Google OAuth token before a live Gmail draft can succeed."
-            ),
+            "status": str(mcp_checks["gmail"]["status"]),
+            "detail": str(mcp_checks["gmail"]["detail"]),
         },
         {
             "key": "scheduler",
             "label": "Scheduler",
             "status": "active" if settings.scheduler_enabled else "inactive",
             "detail": (
-                "Recurring cadence is configured."
+                f"Recurring cadence is configured for {OPERATOR_PRODUCT_KEY}."
                 if settings.scheduler_enabled
-                else "Recurring scheduler is disabled; use one-shot triggers."
+                else f"Recurring scheduler is disabled for {OPERATOR_PRODUCT_KEY}; use one-shot triggers."
             ),
         },
         {
@@ -704,6 +742,7 @@ def _issue_tracker(
     recent_runs,
     recent_delivery_events,
     services,
+    mcp_checks,
 ) -> dict[str, list[dict[str, object]]]:
     warnings: list[dict[str, object]] = []
     errors: list[dict[str, object]] = []
@@ -730,20 +769,50 @@ def _issue_tracker(
             {
                 "code": "scheduler_disabled",
                 "title": "Scheduler disabled",
-                "detail": "Recurring runs are off; operators must trigger flows manually or use Railway cron.",
+                "detail": "Recurring INDMoney runs are off; operators must trigger flows manually or use Railway cron.",
             }
         )
 
+    for key in ("docs", "gmail"):
+        probe = mcp_checks[key]
+        if probe["status"] == "error":
+            errors.append(
+                {
+                    "code": f"{key}_mcp_error",
+                    "title": f"{str(probe['label'])} error",
+                    "detail": str(probe["detail"]),
+                }
+            )
+        elif probe["status"] == "warning":
+            warnings.append(
+                {
+                    "code": f"{key}_mcp_warning",
+                    "title": f"{str(probe['label'])} needs attention",
+                    "detail": str(probe["detail"]),
+                }
+            )
+
     failure_runs = [run for run in recent_runs if run.status == "failed"]
     for run in failure_runs[:5]:
+        detail = run.error_message or "The run ended in failed state."
         errors.append(
             {
                 "code": "run_failed",
                 "title": f"Run failed for {run.product_key} {run.iso_week}",
-                "detail": run.error_message or "The run ended in failed state.",
+                "detail": detail,
                 "run_id": run.run_id,
             }
         )
+        lowered = detail.lower()
+        if any(term in lowered for term in ["docs", "gmail", "google", "mcp", "oauth", "auth"]):
+            errors.append(
+                {
+                    "code": "workspace_delivery_failure",
+                    "title": "Google Docs or Gmail delivery failure detected",
+                    "detail": detail,
+                    "run_id": run.run_id,
+                }
+            )
 
     if not recent_delivery_events:
         warnings.append(
@@ -774,6 +843,8 @@ def _fleet_health_snapshot(*, catalog, recent_runs) -> list[dict[str, object]]:
 
     fleet: list[dict[str, object]] = []
     for product in catalog.products:
+        if product.product_key != OPERATOR_PRODUCT_KEY:
+            continue
         latest = latest_by_product.get(product.product_key)
         status = "idle"
         detail = "No run recorded yet in this environment."
@@ -851,7 +922,11 @@ def _get_job(job_id: str) -> dict[str, object]:
 
 def _list_jobs() -> list[dict[str, object]]:
     with JOB_LOCK:
-        jobs = [dict(job) for job in JOB_REGISTRY.values()]
+        jobs = [
+            dict(job)
+            for job in JOB_REGISTRY.values()
+            if job.get("product_key") in {None, OPERATOR_PRODUCT_KEY}
+        ]
     return sorted(jobs, key=lambda item: str(item["created_at"]), reverse=True)
 
 
@@ -866,7 +941,7 @@ def _execute_single_run_job(
         result = run_product_pipeline(
             settings=settings,
             catalog=catalog,
-            product_key=str(payload["product_key"]),
+            product_key=OPERATOR_PRODUCT_KEY,
             iso_week=payload.get("iso_week"),
             draft_only=bool(payload.get("draft_only", True)),
         )
@@ -894,9 +969,10 @@ def _execute_weekly_job(
 ) -> None:
     _update_job(job_id, status="running", started_at=_utc_now_text())
     try:
-        results = run_active_product_schedule(
+        result = run_product_pipeline(
             settings=settings,
             catalog=catalog,
+            product_key=OPERATOR_PRODUCT_KEY,
             iso_week=payload.get("iso_week"),
             draft_only=bool(payload.get("draft_only", True)),
         )
@@ -912,7 +988,7 @@ def _execute_weekly_job(
         job_id,
         status="completed",
         finished_at=_utc_now_text(),
-        run_ids=[result.run_id for result in results],
+        run_ids=[result.run_id],
     )
 
 
@@ -995,3 +1071,108 @@ def _build_gmail_message(data: GmailDraftRequest) -> EmailMessage:
     message.set_content(data.text_body)
     message.add_alternative(data.html_body, subtype="html")
     return message
+
+
+def _scheduler_override_path(database_path: Path) -> Path:
+    return database_path.parent / "scheduler-state.json"
+
+
+def _read_scheduler_override(database_path: Path) -> dict[str, bool] | None:
+    override_path = _scheduler_override_path(database_path)
+    if not override_path.exists():
+        return None
+    payload = json.loads(override_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return None
+    enabled = payload.get("enabled")
+    if not isinstance(enabled, bool):
+        return None
+    return {"enabled": enabled}
+
+
+def _write_scheduler_override(database_path: Path, *, enabled: bool) -> None:
+    override_path = _scheduler_override_path(database_path)
+    override_path.parent.mkdir(parents=True, exist_ok=True)
+    override_path.write_text(
+        json.dumps(
+            {
+                "enabled": enabled,
+                "product_key": OPERATOR_PRODUCT_KEY,
+                "updated_at": _utc_now_text(),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _workspace_probe_snapshot() -> dict[str, dict[str, object]]:
+    with PROBE_LOCK:
+        captured_at = PROBE_CACHE.get("captured_at")
+        cached_payload = PROBE_CACHE.get("payload")
+        if isinstance(captured_at, datetime) and isinstance(cached_payload, dict):
+            age_seconds = (datetime.now(UTC) - captured_at).total_seconds()
+            if age_seconds < 60:
+                return cached_payload
+
+    payload = _run_workspace_probe()
+    with PROBE_LOCK:
+        PROBE_CACHE["captured_at"] = datetime.now(UTC)
+        PROBE_CACHE["payload"] = payload
+    return payload
+
+
+def _run_workspace_probe() -> dict[str, dict[str, object]]:
+    auth = _google_auth_status()
+    docs_probe = {
+        "label": "Google Docs MCP",
+        "status": "warning" if not auth["token_available"] else "active",
+        "detail": (
+            "Google token missing; Docs append is blocked."
+            if not auth["token_available"]
+            else "Google Docs path looks healthy."
+        ),
+    }
+    gmail_probe = {
+        "label": "Gmail MCP",
+        "status": "warning" if not auth["token_available"] else "active",
+        "detail": (
+            "Google token missing; Gmail draft/send is blocked."
+            if not auth["token_available"]
+            else "Gmail path looks healthy."
+        ),
+    }
+    if not auth["token_available"]:
+        return {"docs": docs_probe, "gmail": gmail_probe}
+
+    try:
+        creds = get_creds()
+        get_drive_service(creds).files().list(
+            q=f"mimeType='{GOOGLE_DOC_MIME_TYPE}' and trashed=false",
+            fields="files(id)",
+            pageSize=1,
+            spaces="drive",
+        ).execute()
+    except HTTPException as exc:
+        docs_probe["status"] = "error"
+        docs_probe["detail"] = str(exc.detail)
+    except Exception as exc:
+        docs_probe["status"] = "error"
+        docs_probe["detail"] = str(exc)
+
+    try:
+        creds = get_creds()
+        get_gmail_service(creds).users().getProfile(userId="me").execute()
+    except HTTPException as exc:
+        gmail_probe["status"] = "error"
+        gmail_probe["detail"] = str(exc.detail)
+    except Exception as exc:
+        gmail_probe["status"] = "error"
+        gmail_probe["detail"] = str(exc)
+
+    return {"docs": docs_probe, "gmail": gmail_probe}
+
+
+def _delivery_event_matches_product(event, runs) -> bool:
+    run_ids = {run.run_id for run in runs}
+    return event.run_id in run_ids

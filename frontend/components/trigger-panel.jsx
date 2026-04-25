@@ -1,59 +1,87 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 const defaultWeek = new Date().toISOString().slice(0, 10);
+const operatorProductKey = "indmoney";
 
-export function TriggerPanel({ apiBaseUrl, products }) {
-  const activeProducts = useMemo(
-    () => products.filter((product) => product.active),
-    [products],
-  );
-  const [productKey, setProductKey] = useState(activeProducts[0]?.product_key ?? "indmoney");
+export function TriggerPanel({ apiBaseUrl, scheduler }) {
   const [isoWeek, setIsoWeek] = useState("");
   const [draftOnly, setDraftOnly] = useState(true);
   const [status, setStatus] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState("");
 
-  async function trigger(path, body) {
-    setBusy(true);
-    setStatus("Submitting job...");
+  async function triggerSingleRun() {
+    setBusyAction("run");
+    setStatus("Submitting INDMoney one-shot flow...");
     try {
-      const response = await fetch(`${apiBaseUrl}${path}`, {
+      const response = await fetch(`${apiBaseUrl}/api/trigger/run`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          product_key: operatorProductKey,
+          iso_week: isoWeek || null,
+          draft_only: draftOnly,
+        }),
       });
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload.detail || "Request failed");
       }
-      setStatus(`Queued ${payload.job.kind} job ${payload.job.job_id}. Refresh to see live status.`);
+      setStatus(
+        `Queued INDMoney flow ${payload.job.job_id}. Watch the Background Jobs and Delivery Audit panels for progress.`,
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unknown request failure");
     } finally {
-      setBusy(false);
+      setBusyAction("");
+    }
+  }
+
+  async function toggleScheduler() {
+    const nextEnabled = !scheduler?.enabled;
+    setBusyAction("scheduler");
+    setStatus(
+      nextEnabled
+        ? "Enabling periodic INDMoney scheduler..."
+        : "Disabling periodic INDMoney scheduler...",
+    );
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/scheduler`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ enabled: nextEnabled }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "Scheduler update failed");
+      }
+      setStatus(
+        nextEnabled
+          ? `Periodic INDMoney scheduler enabled. Next run: ${payload.next_run_local || "scheduled from backend cadence"}.`
+          : "Periodic INDMoney scheduler disabled. One-shot runs remain available.",
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unknown scheduler failure");
+    } finally {
+      setBusyAction("");
     }
   }
 
   return (
     <section className="panel accent-panel">
       <div className="panel-header">
-        <p className="eyebrow">Command Center</p>
-        <h2>Trigger a one-shot end-to-end flow without touching the terminal</h2>
+        <p className="eyebrow">INDMoney Control</p>
+        <h2>Run one flow now or control the periodic scheduler for INDMoney only</h2>
       </div>
-      <div className="form-grid">
+      <div className="form-grid compact">
         <label>
           <span>Product</span>
-          <select value={productKey} onChange={(event) => setProductKey(event.target.value)}>
-            {activeProducts.map((product) => (
-              <option key={product.product_key} value={product.product_key}>
-                {product.display_name}
-              </option>
-            ))}
-          </select>
+          <input value="INDMoney" disabled readOnly />
         </label>
         <label>
           <span>ISO week</span>
@@ -78,33 +106,28 @@ export function TriggerPanel({ apiBaseUrl, products }) {
         <button
           type="button"
           className="primary-button"
-          disabled={busy}
-          onClick={() =>
-            trigger("/api/trigger/run", {
-              product_key: productKey,
-              iso_week: isoWeek || null,
-              draft_only: draftOnly,
-            })
-          }
+          disabled={busyAction !== ""}
+          onClick={triggerSingleRun}
         >
-          Run One-Shot Full Flow
+          {busyAction === "run" ? "Submitting..." : "Run INDMoney Flow Once"}
         </button>
         <button
           type="button"
           className="secondary-button"
-          disabled={busy}
-          onClick={() =>
-            trigger("/api/trigger/weekly", {
-              iso_week: isoWeek || null,
-              draft_only: draftOnly,
-            })
-          }
+          disabled={busyAction !== ""}
+          onClick={toggleScheduler}
         >
-          Run Weekly Batch Now
+          {busyAction === "scheduler"
+            ? "Updating..."
+            : scheduler?.enabled
+              ? "Disable Periodic Scheduler"
+              : "Enable Periodic Scheduler"}
         </button>
       </div>
       <p className="muted">
-        One-shot full flow runs ingestion, analysis, summarization, render, Docs publish, and Gmail draft/send for the selected product. Leave ISO week blank to use the current week. Browser date reference: {defaultWeek}.
+        One-shot flow runs ingestion, analysis, OpenAI summarization, render, Docs publish, and
+        Gmail draft/send for INDMoney. The periodic scheduler control updates the backend schedule
+        state for INDMoney only. Browser date reference: {defaultWeek}.
       </p>
       {status ? <p className="status-banner">{status}</p> : null}
     </section>
