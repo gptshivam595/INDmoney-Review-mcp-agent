@@ -3,6 +3,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 COPY pyproject.toml ./pyproject.toml
+COPY README.md ./README.md
 COPY agent ./agent
 COPY products.yaml ./products.yaml
 COPY docs ./docs
