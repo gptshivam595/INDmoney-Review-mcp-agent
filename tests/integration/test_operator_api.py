@@ -34,13 +34,13 @@ def test_api_overview_returns_core_sections(tmp_path: Path, monkeypatch) -> None
             "product_key": "indmoney",
             "display_name": "INDMoney",
             "active": True,
-            "stakeholders": {
-                "to": ["gptshivam595@gmail.com"],
-                "cc": ["gptshivam595@gmail.com"],
-                "bcc": [],
-            },
-        }
-    ]
+                "stakeholders": {
+                    "to": ["gptshivam595@gmail.com"],
+                    "cc": [],
+                    "bcc": [],
+                },
+            }
+        ]
 
 
 def test_api_dashboard_alias_returns_richer_payload(tmp_path: Path, monkeypatch) -> None:

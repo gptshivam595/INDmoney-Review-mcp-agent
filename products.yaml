@@ -8,8 +8,7 @@ products:
     stakeholders:
       to:
         - gptshivam595@gmail.com
-      cc:
-        - gptshivam595@gmail.com
+      cc: []
       bcc: []
   - product_key: groww
     display_name: Groww
