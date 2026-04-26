@@ -136,6 +136,7 @@ class TriggerRunRequest(BaseModel):
     product_key: str
     iso_week: str | None = None
     draft_only: bool = True
+    force_gmail_delivery: bool = True
 
 
 class TriggerWeeklyRequest(BaseModel):
@@ -944,6 +945,7 @@ def _execute_single_run_job(
             product_key=OPERATOR_PRODUCT_KEY,
             iso_week=payload.get("iso_week"),
             draft_only=bool(payload.get("draft_only", True)),
+            force_gmail_delivery=bool(payload.get("force_gmail_delivery", True)),
         )
     except Exception as exc:
         _update_job(

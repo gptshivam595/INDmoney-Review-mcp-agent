@@ -201,6 +201,50 @@ def test_run_product_pipeline_can_send_existing_draft_on_confirmed_rerun(
     assert phase_lookup["publish-gmail"].status == "executed"
 
 
+def test_run_product_pipeline_force_gmail_delivery_sends_again(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    settings, catalog = prepare_runtime(tmp_path, monkeypatch)
+    settings = settings.model_copy(update={"confirm_send": True})
+    docs_client = FakeDocsClient()
+    gmail_client = FakeGmailClient()
+    dependencies = PipelineDependencies(
+        appstore_fetcher=appstore_reviews,
+        playstore_fetcher=playstore_reviews,
+        docs_client=docs_client,
+        gmail_client=gmail_client,
+    )
+
+    first = run_product_pipeline(
+        settings=settings,
+        catalog=catalog,
+        product_key="indmoney",
+        iso_week="2026-W17",
+        draft_only=False,
+        force_gmail_delivery=True,
+        dependencies=dependencies,
+    )
+    second = run_product_pipeline(
+        settings=settings,
+        catalog=catalog,
+        product_key="indmoney",
+        iso_week="2026-W17",
+        draft_only=False,
+        force_gmail_delivery=True,
+        dependencies=dependencies,
+    )
+
+    phase_lookup = {phase.phase: phase for phase in second.phase_results}
+    assert first.final_status == "completed"
+    assert second.final_status == "completed"
+    assert docs_client.append_calls == 1
+    assert gmail_client.create_calls == 2
+    assert gmail_client.send_calls == 2
+    assert phase_lookup["publish-docs"].status == "skipped"
+    assert phase_lookup["publish-gmail"].status == "executed"
+
+
 def test_run_product_pipeline_resumes_after_docs_publish_without_duplicate_append(
     tmp_path: Path,
     monkeypatch,

@@ -72,6 +72,7 @@ def run_product_pipeline(
     iso_week: str | None = None,
     review_weeks: int | None = None,
     draft_only: bool = False,
+    force_gmail_delivery: bool = False,
     dependencies: PipelineDependencies | None = None,
 ) -> PipelineRunResult:
     database_path, product, run = ensure_pipeline_run(
@@ -157,6 +158,7 @@ def run_product_pipeline(
                 existing_result=fetch_gmail_publish_result(database_path, run.run_id),
                 settings=settings,
                 draft_only=draft_only,
+                force_gmail_delivery=force_gmail_delivery,
             ),
             execute=lambda: _execute_with_retry(
                 settings=settings,
@@ -167,6 +169,7 @@ def run_product_pipeline(
                     product=product,
                     run=run,
                     draft_only=draft_only,
+                    force_delivery=force_gmail_delivery,
                     client=active_dependencies.gmail_client,
                 ),
                 transient_exceptions=(GmailMCPTransportError,),
@@ -229,8 +232,11 @@ def _gmail_checkpoint_for_request(
     existing_result,
     settings: RuntimeSettings,
     draft_only: bool,
+    force_gmail_delivery: bool,
 ):
     if existing_result is None:
+        return None
+    if force_gmail_delivery:
         return None
     effective_draft_only = draft_only or not settings.confirm_send
     has_unsent_draft = bool(existing_result.gmail_draft_id and not existing_result.gmail_message_id)

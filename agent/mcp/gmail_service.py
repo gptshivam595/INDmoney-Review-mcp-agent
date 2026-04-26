@@ -22,6 +22,7 @@ def publish_gmail_run(
     product: ProductConfig,
     run: RunRecord,
     draft_only: bool,
+    force_delivery: bool = False,
     client: GmailMCPClient | None = None,
 ) -> GmailPublishResult:
     update_run_status(database_path, run.run_id, RunStatus.PUBLISHING_GMAIL)
@@ -64,7 +65,43 @@ def publish_gmail_run(
                 existing_message_id = existing.message_id
 
         effective_draft_only = draft_only or not settings.confirm_send
-        if existing_draft_id or existing_message_id:
+        should_send_existing_draft = (
+            force_delivery
+            and existing_draft_id
+            and not existing_message_id
+            and not effective_draft_only
+        )
+        if should_send_existing_draft:
+            send_result = gmail_client.send_draft(existing_draft_id)
+            gmail_mcp_calls += 1
+            result = GmailPublishResult(
+                run_id=run.run_id,
+                product_key=run.product_key,
+                iso_week=run.iso_week,
+                email_subject=final_email.subject,
+                recipients=recipients,
+                gdoc_deep_link=delivery_result.gdoc_deep_link,
+                gmail_draft_id=existing_draft_id,
+                gmail_message_id=send_result.message_id,
+                delivery_status="sent",
+                draft_only=False,
+                skipped=False,
+                gmail_mcp_calls=gmail_mcp_calls,
+            )
+            update_run_gmail_publish_result(database_path, run.run_id, result)
+            record_delivery_event(
+                database_path,
+                run_id=run.run_id,
+                channel="gmail",
+                idempotency_key=f"{run.run_id}:gmail-force-send:{result.gmail_message_id}",
+                status=result.delivery_status,
+                external_id=result.gmail_message_id,
+                payload=final_email.model_dump(mode="json"),
+                metadata=result.model_dump(mode="json"),
+            )
+            return result
+
+        if (existing_draft_id or existing_message_id) and not force_delivery:
             if existing_draft_id and not existing_message_id and not effective_draft_only:
                 send_result = gmail_client.send_draft(existing_draft_id)
                 gmail_mcp_calls += 1
