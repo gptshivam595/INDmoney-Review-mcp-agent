@@ -482,7 +482,7 @@ export function DashboardShell({ apiBaseUrl }) {
       <main className="command-main">
         <header className="top-bar">
           <div className="top-title">
-            <span>INDmoney Server Health</span>
+            <span>INDmoney</span>
             <div className="search-box">
               {icon("search")}
               <input aria-label="Search resources" placeholder="Search resources..." type="text" />
