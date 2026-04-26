@@ -52,6 +52,7 @@ def ingest_reviews_for_run(
             unchanged=stats["unchanged"],
             raw_snapshot_path=str(raw_snapshot_path),
             sources=sources,
+            review_ids=[review.review_id for review in reviews],
         )
         update_run_ingestion_result(database_path, run.run_id, result)
         return result

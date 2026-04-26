@@ -132,6 +132,7 @@ class IngestionResult(BaseModel):
     unchanged: int
     raw_snapshot_path: str
     sources: dict[str, int] = Field(default_factory=dict)
+    review_ids: list[str] = Field(default_factory=list)
 
 
 class AnalysisCluster(BaseModel):

@@ -257,23 +257,39 @@ def fetch_run(database_path: Path, run_id: str) -> RunRecord:
 
 def fetch_reviews_for_run(database_path: Path, run: RunRecord) -> list[RawReview]:
     with connect(database_path) as connection:
-        rows = connection.execute(
-            """
-            SELECT
-                review_id, product_key, source, external_id, rating, title, body_raw,
-                body_scrubbed, reviewed_at, locale, raw_json
-            FROM reviews
-            WHERE product_key = ?
-              AND reviewed_at >= ?
-              AND reviewed_at <= ?
-            ORDER BY reviewed_at DESC, review_id ASC
-            """,
-            (
-                run.product_key,
-                f"{run.window_start.isoformat()}T00:00:00",
-                f"{run.window_end.isoformat()}T23:59:59.999999+00:00",
-            ),
-        ).fetchall()
+        review_ids = _load_ingested_review_ids(connection, run.run_id)
+        if review_ids:
+            placeholders = ", ".join("?" for _ in review_ids)
+            rows = connection.execute(
+                f"""
+                SELECT
+                    review_id, product_key, source, external_id, rating, title, body_raw,
+                    body_scrubbed, reviewed_at, locale, raw_json
+                FROM reviews
+                WHERE product_key = ?
+                  AND review_id IN ({placeholders})
+                ORDER BY reviewed_at DESC, review_id ASC
+                """,
+                (run.product_key, *review_ids),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                """
+                SELECT
+                    review_id, product_key, source, external_id, rating, title, body_raw,
+                    body_scrubbed, reviewed_at, locale, raw_json
+                FROM reviews
+                WHERE product_key = ?
+                  AND reviewed_at >= ?
+                  AND reviewed_at <= ?
+                ORDER BY reviewed_at DESC, review_id ASC
+                """,
+                (
+                    run.product_key,
+                    f"{run.window_start.isoformat()}T00:00:00",
+                    f"{run.window_end.isoformat()}T23:59:59.999999+00:00",
+                ),
+            ).fetchall()
 
     return [
         RawReview(
@@ -1059,6 +1075,17 @@ def _load_metrics(connection: sqlite3.Connection, run_id: str) -> dict[str, obje
     if metrics_row is not None and metrics_row["metrics_json"]:
         metrics = json.loads(metrics_row["metrics_json"])
     return metrics
+
+
+def _load_ingested_review_ids(connection: sqlite3.Connection, run_id: str) -> list[str]:
+    metrics = _load_metrics(connection, run_id)
+    ingestion = metrics.get("ingestion")
+    if not isinstance(ingestion, dict):
+        return []
+    review_ids = ingestion.get("review_ids")
+    if not isinstance(review_ids, list):
+        return []
+    return [review_id for review_id in review_ids if isinstance(review_id, str)]
 
 
 def _migrate_schema(connection: sqlite3.Connection) -> None:

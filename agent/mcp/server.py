@@ -9,14 +9,15 @@ from threading import Lock
 from typing import Any
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
 from agent.config import load_product_catalog, load_runtime_settings
-from agent.orchestrator import run_active_product_schedule, run_product_pipeline
+from agent.ingestion.csv_upload import parse_uploaded_csv_reviews
+from agent.orchestrator import PipelineDependencies, run_active_product_schedule, run_product_pipeline
 from agent.storage import (
     count_runs_by_status,
     initialize_database,
@@ -620,6 +621,58 @@ def api_trigger_run(data: TriggerRunRequest):
     return {"job": _get_job(job_id)}
 
 
+@app.post("/api/trigger/upload-csv", responses=HTTP_500_RESPONSE)
+async def api_trigger_csv_run(
+    request: Request,
+    product_key: str = OPERATOR_PRODUCT_KEY,
+    iso_week: str | None = None,
+    draft_only: bool = False,
+):
+    settings, catalog, _database_path = _load_runtime_context()
+    if product_key != OPERATOR_PRODUCT_KEY:
+        raise HTTPException(status_code=400, detail="Only INDMoney CSV uploads are supported.")
+    catalog.get_product(OPERATOR_PRODUCT_KEY)
+
+    csv_bytes = await request.body()
+    if not csv_bytes:
+        raise HTTPException(status_code=400, detail="CSV upload is empty.")
+    if len(csv_bytes) > 2_000_000:
+        raise HTTPException(status_code=413, detail="CSV upload is too large. Limit is 2 MB.")
+    try:
+        csv_text = csv_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="CSV upload must be UTF-8 encoded.") from exc
+
+    try:
+        parsed_preview = parse_uploaded_csv_reviews(
+            csv_text=csv_text,
+            product_key=OPERATOR_PRODUCT_KEY,
+            upload_id="validation",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    job_id = _create_job(
+        kind="csv-upload-run",
+        product_key=OPERATOR_PRODUCT_KEY,
+        iso_week=iso_week,
+        draft_only=draft_only,
+    )
+    _update_job(job_id, uploaded_rows=len(parsed_preview))
+    JOB_EXECUTOR.submit(
+        _execute_csv_upload_job,
+        job_id,
+        settings.model_copy(deep=True),
+        catalog.model_copy(deep=True),
+        {
+            "csv_text": csv_text,
+            "iso_week": iso_week,
+            "draft_only": draft_only,
+        },
+    )
+    return {"job": _get_job(job_id)}
+
+
 @app.post("/api/trigger/weekly", responses=HTTP_500_RESPONSE)
 def api_trigger_weekly(data: TriggerWeeklyRequest):
     settings, catalog, _database_path = _load_runtime_context()
@@ -946,6 +999,55 @@ def _execute_single_run_job(
             iso_week=payload.get("iso_week"),
             draft_only=bool(payload.get("draft_only", True)),
             force_gmail_delivery=bool(payload.get("force_gmail_delivery", True)),
+        )
+    except Exception as exc:
+        _update_job(
+            job_id,
+            status="failed",
+            finished_at=_utc_now_text(),
+            error_message=str(exc),
+        )
+        return
+    _update_job(
+        job_id,
+        status="completed",
+        finished_at=_utc_now_text(),
+        run_ids=[result.run_id],
+    )
+
+
+def _execute_csv_upload_job(
+    job_id: str,
+    settings,
+    catalog,
+    payload: dict[str, object],
+) -> None:
+    _update_job(job_id, status="running", started_at=_utc_now_text())
+    csv_text = str(payload.get("csv_text", ""))
+
+    def csv_fetcher(product, _since_date):
+        return parse_uploaded_csv_reviews(
+            csv_text=csv_text,
+            product_key=product.product_key,
+            upload_id=job_id,
+        )
+
+    def empty_fetcher(_product, _since_date):
+        return []
+
+    try:
+        result = run_product_pipeline(
+            settings=settings,
+            catalog=catalog,
+            product_key=OPERATOR_PRODUCT_KEY,
+            iso_week=payload.get("iso_week"),
+            run_key_suffix=f"csv-{job_id[:8]}",
+            draft_only=bool(payload.get("draft_only", False)),
+            force_gmail_delivery=True,
+            dependencies=PipelineDependencies(
+                appstore_fetcher=csv_fetcher,
+                playstore_fetcher=empty_fetcher,
+            ),
         )
     except Exception as exc:
         _update_job(

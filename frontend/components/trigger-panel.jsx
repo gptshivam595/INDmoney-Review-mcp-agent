@@ -12,6 +12,7 @@ function icon(name) {
 export function TriggerPanel({ apiBaseUrl, scheduler }) {
   const [isoWeek, setIsoWeek] = useState("");
   const [draftOnly, setDraftOnly] = useState(false);
+  const [csvFile, setCsvFile] = useState(null);
   const [status, setStatus] = useState("");
   const [busyAction, setBusyAction] = useState("");
 
@@ -71,6 +72,43 @@ export function TriggerPanel({ apiBaseUrl, scheduler }) {
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unknown scheduler failure");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function uploadCsvAndRun() {
+    if (!csvFile) {
+      setStatus("Choose a CSV file before uploading.");
+      return;
+    }
+    setBusyAction("csv");
+    setStatus(`Uploading ${csvFile.name} and queuing CSV-driven INDMoney flow...`);
+    try {
+      const csvText = await csvFile.text();
+      const query = new URLSearchParams({
+        product_key: operatorProductKey,
+        draft_only: String(draftOnly),
+      });
+      if (isoWeek) {
+        query.set("iso_week", isoWeek);
+      }
+      const response = await fetch(`${apiBaseUrl}/api/trigger/upload-csv?${query.toString()}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+        },
+        body: csvText,
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.detail || "CSV upload failed");
+      }
+      setStatus(
+        `Queued CSV flow ${payload.job.job_id} with ${payload.job.uploaded_rows || "uploaded"} row(s) in ${draftOnly ? "draft-only" : "send-enabled"} mode.`,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unknown CSV upload failure");
     } finally {
       setBusyAction("");
     }
@@ -152,6 +190,40 @@ export function TriggerPanel({ apiBaseUrl, scheduler }) {
           >
             {icon("play_arrow")}
             {busyAction === "run" ? "Submitting..." : "Run INDMoney Flow Once"}
+          </button>
+        </div>
+      </div>
+
+      <div className="csv-upload-box">
+        <div className="csv-upload-copy">
+          <div className="csv-upload-icon">{icon("upload_file")}</div>
+          <div>
+            <p className="eyebrow tiny">CSV Upload</p>
+            <h3>Upload CSV and run the same Docs + Gmail flow</h3>
+            <p className="muted">
+              Include a review text column such as <code>review</code>, <code>body</code>, or
+              <code>feedback</code>. Optional columns: rating, title, reviewed_at, locale.
+            </p>
+          </div>
+        </div>
+        <div className="csv-upload-actions">
+          <label className="file-picker">
+            {icon("attach_file")}
+            <span>{csvFile ? csvFile.name : "Choose CSV file"}</span>
+            <input
+              accept=".csv,text/csv"
+              type="file"
+              onChange={(event) => setCsvFile(event.target.files?.[0] || null)}
+            />
+          </label>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={busyAction !== ""}
+            onClick={uploadCsvAndRun}
+          >
+            {icon("cloud_upload")}
+            {busyAction === "csv" ? "Uploading..." : "Upload CSV & Run Flow"}
           </button>
         </div>
       </div>

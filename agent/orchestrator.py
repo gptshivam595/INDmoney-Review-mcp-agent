@@ -49,6 +49,7 @@ def ensure_pipeline_run(
     product_key: str,
     iso_week: str | None,
     review_weeks: int | None = None,
+    run_key_suffix: str | None = None,
 ) -> tuple[Path, ProductConfig, RunRecord]:
     product = catalog.get_product(product_key)
     resolved_iso_week = iso_week or current_iso_week(settings.timezone)
@@ -57,6 +58,8 @@ def ensure_pipeline_run(
         review_weeks=review_weeks or settings.default_review_window_weeks,
         timezone_name=settings.timezone,
     )
+    if run_key_suffix:
+        window = window.model_copy(update={"iso_week": f"{resolved_iso_week}-{run_key_suffix}"})
     database_path = settings.resolve_database_path()
     initialize_database(database_path)
     sync_products(database_path, catalog)
@@ -71,6 +74,7 @@ def run_product_pipeline(
     product_key: str,
     iso_week: str | None = None,
     review_weeks: int | None = None,
+    run_key_suffix: str | None = None,
     draft_only: bool = False,
     force_gmail_delivery: bool = False,
     dependencies: PipelineDependencies | None = None,
@@ -81,6 +85,7 @@ def run_product_pipeline(
         product_key=product_key,
         iso_week=iso_week,
         review_weeks=review_weeks,
+        run_key_suffix=run_key_suffix,
     )
     active_dependencies = dependencies or PipelineDependencies()
     initial_status = run.status.value

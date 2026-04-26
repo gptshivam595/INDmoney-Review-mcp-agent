@@ -732,6 +732,95 @@ code,
   background: rgba(242, 202, 80, 0.1);
 }
 
+.csv-upload-box {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding: 18px;
+  border: 1px solid rgba(242, 202, 80, 0.18);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(14, 14, 14, 0.42), rgba(32, 31, 31, 0.58)),
+    radial-gradient(circle at top left, rgba(242, 202, 80, 0.08), transparent 40%);
+}
+
+.csv-upload-copy,
+.csv-upload-actions,
+.file-picker {
+  display: flex;
+  align-items: center;
+}
+
+.csv-upload-copy {
+  min-width: 0;
+  gap: 14px;
+}
+
+.csv-upload-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid rgba(242, 202, 80, 0.28);
+  border-radius: 14px;
+  color: var(--primary);
+  background: rgba(242, 202, 80, 0.08);
+}
+
+.csv-upload-copy h3 {
+  margin: 0;
+  color: var(--text);
+  font-family: "Manrope", sans-serif;
+  font-size: 1rem;
+}
+
+.csv-upload-copy .muted {
+  margin: 6px 0 0;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.csv-upload-copy code {
+  color: var(--primary);
+}
+
+.csv-upload-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.file-picker {
+  position: relative;
+  max-width: 280px;
+  min-height: 48px;
+  gap: 8px;
+  padding: 0 16px;
+  overflow: hidden;
+  border: 1px solid rgba(153, 144, 124, 0.32);
+  border-radius: 12px;
+  color: var(--text-soft);
+  background: rgba(14, 14, 14, 0.54);
+  font-weight: 800;
+}
+
+.file-picker span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-picker input {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
 .control-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1118,6 +1207,16 @@ tbody tr:last-child td {
     justify-content: flex-start;
   }
 
+  .csv-upload-box {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .csv-upload-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .scheduler-snapshot {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1230,6 +1329,8 @@ tbody tr:last-child td {
   }
 
   .control-actions,
+  .csv-upload-actions,
+  .file-picker,
   .primary-button,
   .secondary-button {
     width: 100%;
