@@ -153,7 +153,11 @@ def run_product_pipeline(
         _maybe_run_phase(
             phase_results=phase_results,
             phase_name="publish-gmail",
-            existing_result=fetch_gmail_publish_result(database_path, run.run_id),
+            existing_result=_gmail_checkpoint_for_request(
+                existing_result=fetch_gmail_publish_result(database_path, run.run_id),
+                settings=settings,
+                draft_only=draft_only,
+            ),
             execute=lambda: _execute_with_retry(
                 settings=settings,
                 phase_name="publish-gmail",
@@ -218,6 +222,21 @@ def run_active_product_schedule(
             )
         )
     return results
+
+
+def _gmail_checkpoint_for_request(
+    *,
+    existing_result,
+    settings: RuntimeSettings,
+    draft_only: bool,
+):
+    if existing_result is None:
+        return None
+    effective_draft_only = draft_only or not settings.confirm_send
+    has_unsent_draft = bool(existing_result.gmail_draft_id and not existing_result.gmail_message_id)
+    if has_unsent_draft and not effective_draft_only:
+        return None
+    return existing_result
 
 
 def _maybe_run_phase(

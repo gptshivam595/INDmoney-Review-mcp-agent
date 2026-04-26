@@ -11,7 +11,7 @@ function icon(name) {
 
 export function TriggerPanel({ apiBaseUrl, scheduler }) {
   const [isoWeek, setIsoWeek] = useState("");
-  const [draftOnly, setDraftOnly] = useState(true);
+  const [draftOnly, setDraftOnly] = useState(false);
   const [status, setStatus] = useState("");
   const [busyAction, setBusyAction] = useState("");
 
@@ -35,7 +35,7 @@ export function TriggerPanel({ apiBaseUrl, scheduler }) {
         throw new Error(payload.detail || "Request failed");
       }
       setStatus(
-        `Queued INDMoney flow ${payload.job.job_id}. Watch Background Jobs and Delivery Audit for progress.`,
+        `Queued INDMoney flow ${payload.job.job_id} in ${draftOnly ? "draft-only" : "send-enabled"} mode. Watch Background Jobs and Delivery Audit for progress.`,
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unknown request failure");
@@ -87,8 +87,8 @@ export function TriggerPanel({ apiBaseUrl, scheduler }) {
             Run one flow now or control the periodic scheduler
           </h2>
           <p className="muted">
-            INDMoney only. One-shot runs can draft first, while scheduler state is saved through
-            the live backend.
+            INDMoney only. One-shot runs send to the configured recipient by default; switch to
+            draft-only when you want a safe preview.
           </p>
         </div>
         <div className={scheduler?.enabled ? "scheduler-led active" : "scheduler-led"}>

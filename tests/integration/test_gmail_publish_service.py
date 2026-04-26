@@ -147,6 +147,50 @@ def test_publish_gmail_run_sends_when_confirmed(
     assert run_row[1] == "msg-1"
 
 
+def test_publish_gmail_run_sends_existing_draft_when_confirmed_later(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database_path, catalog, settings, run = prepare_rendered_run(tmp_path, monkeypatch)
+    settings = settings.model_copy(update={"confirm_send": True})
+    client = FakeGmailClient()
+
+    draft = publish_gmail_run(
+        settings=settings,
+        database_path=database_path,
+        product=catalog.get_product("indmoney"),
+        run=run,
+        draft_only=True,
+        client=client,
+    )
+    client.calls.clear()
+    sent = publish_gmail_run(
+        settings=settings,
+        database_path=database_path,
+        product=catalog.get_product("indmoney"),
+        run=run,
+        draft_only=False,
+        client=client,
+    )
+
+    connection = sqlite3.connect(database_path)
+    run_row = connection.execute(
+        "SELECT gmail_draft_id, gmail_message_id FROM runs WHERE run_id = ?",
+        (run.run_id,),
+    ).fetchone()
+    events = connection.execute(
+        "SELECT status, external_id FROM delivery_events WHERE channel = 'gmail' ORDER BY event_id",
+    ).fetchall()
+
+    assert draft.delivery_status == "drafted"
+    assert sent.delivery_status == "sent"
+    assert sent.gmail_draft_id == "draft-1"
+    assert sent.gmail_message_id == "msg-1"
+    assert client.calls == ["search_messages", "send_draft"]
+    assert run_row == ("draft-1", "msg-1")
+    assert events == [("drafted", "draft-1"), ("sent", "msg-1")]
+
+
 def test_publish_gmail_run_blocks_when_docs_link_is_missing(
     tmp_path: Path,
     monkeypatch,
