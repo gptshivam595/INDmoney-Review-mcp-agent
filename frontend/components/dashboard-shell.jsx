@@ -440,12 +440,12 @@ export function DashboardShell({ apiBaseUrl }) {
 
   return (
     <div className="command-app">
-      <aside className="command-sidebar" aria-label="Command Center navigation">
+      <aside className="command-sidebar" aria-label="Review Center navigation">
         <div className="brand-lockup">
           <div className="brand-mark">{icon("dns")}</div>
           <div>
-            <strong>Command Center</strong>
-            <span>Lux-Tech Precision</span>
+            <strong>Review Center</strong>
+            <span>Shivam Kumar Gupta</span>
           </div>
         </div>
         <nav className="side-links">
