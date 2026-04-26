@@ -512,7 +512,7 @@ export function DashboardShell({ apiBaseUrl }) {
           <section className="hero-panel">
             <div>
               <p className="eyebrow">Operations Control Tower</p>
-              <h1>INDmoney Command Center</h1>
+              <h1>Review Insights Analyser</h1>
               <p className="hero-text">
                 Live pulse health for INDMoney review ingestion, OpenAI summarization, Google Docs
                 publishing, Gmail delivery, and scheduler risk.

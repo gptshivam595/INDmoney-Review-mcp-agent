@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "INDmoney Command Center",
+  title: "Review Insights Analyser",
   description: "Dark operations dashboard for the INDMoney review pulse agent.",
 };
 
