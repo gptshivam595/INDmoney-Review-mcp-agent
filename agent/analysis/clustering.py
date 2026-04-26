@@ -106,6 +106,54 @@ def build_clusters(
     return ClusterOutput(clusters=reindexed, noise_count=noise_count)
 
 
+def build_csv_fallback_clusters(
+    *,
+    run_id: str,
+    inputs: list[ClusterInput],
+    max_clusters: int = 3,
+) -> ClusterOutput:
+    if not inputs:
+        return ClusterOutput(clusters=[], noise_count=0)
+
+    buckets = [
+        [item for item in inputs if item.review.review.rating <= 2],
+        [item for item in inputs if item.review.review.rating >= 4],
+        [item for item in inputs if item.review.review.rating == 3],
+    ]
+    non_empty_buckets = [bucket for bucket in buckets if bucket]
+    if len(non_empty_buckets) <= 1:
+        non_empty_buckets = [inputs]
+
+    ranked_buckets = sorted(
+        non_empty_buckets,
+        key=lambda bucket: (-len(bucket), -abs(_sentiment_score(bucket))),
+    )[:max_clusters]
+
+    clusters: list[AnalysisCluster] = []
+    for cluster_index, bucket in enumerate(ranked_buckets):
+        ordered_bucket = sorted(
+            bucket,
+            key=lambda item: item.review.review.review_id,
+        )
+        review_ids = [item.review.review.review_id for item in ordered_bucket]
+        cluster_id = hashlib.sha1(
+            f"{run_id}:csv-fallback:{cluster_index}:{','.join(review_ids)}".encode()
+        ).hexdigest()
+        clusters.append(
+            AnalysisCluster(
+                cluster_id=cluster_id,
+                cluster_index=cluster_index,
+                review_ids=review_ids,
+                review_count=len(review_ids),
+                representative_review_id=_fallback_representative_review_id(ordered_bucket),
+                keyphrases=_extract_keyphrases(ordered_bucket),
+                sentiment_score=_sentiment_score(ordered_bucket),
+                noise=False,
+            )
+        )
+    return ClusterOutput(clusters=clusters, noise_count=0)
+
+
 def cosine_similarity(left: list[float], right: list[float]) -> float:
     if len(left) != len(right):
         msg = "Embedding dimensions must match"
@@ -161,6 +209,16 @@ def _medoid_review_id(component: list[ClusterInput]) -> str:
             best_id = candidate_id
             best_score = score
     return best_id
+
+
+def _fallback_representative_review_id(component: list[ClusterInput]) -> str:
+    return max(
+        component,
+        key=lambda item: (
+            len(item.review.normalized_text),
+            item.review.review.review_id,
+        ),
+    ).review.review.review_id
 
 
 def _extract_keyphrases(component: list[ClusterInput], limit: int = 5) -> list[str]:

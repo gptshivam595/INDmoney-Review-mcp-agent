@@ -23,11 +23,25 @@ class FakeEmbeddingProvider:
         return [0.0, 0.0, 1.0]
 
 
-def make_review(review_id: str, body: str, rating: int) -> RawReview:
+class NoisyCsvEmbeddingProvider:
+    model_name = "fake-noisy-csv-v1"
+
+    def embed(self, text: str) -> list[float]:
+        index = int(text.rsplit(" ", maxsplit=1)[-1])
+        return [1.0 if position == index else 0.0 for position in range(6)]
+
+
+def make_review(
+    review_id: str,
+    body: str,
+    rating: int,
+    *,
+    source: str = "fixture",
+) -> RawReview:
     return RawReview(
         review_id=review_id,
         product_key="indmoney",
-        source="fixture",
+        source=source,
         external_id=review_id,
         rating=rating,
         title=None,
@@ -87,3 +101,74 @@ def test_analyze_run_clusters_reviews_and_reuses_embedding_cache(
     assert cluster_count == 2
     assert [cluster.review_count for cluster in first.clusters] == [3, 3]
     assert Path(first.artifact_path).exists()
+
+
+def test_analyze_run_builds_csv_fallback_clusters_when_upload_reviews_are_noise(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    database_path = tmp_path / "pulse.db"
+    monkeypatch.setenv("PULSE_DATABASE_PATH", str(database_path))
+    monkeypatch.setenv("PULSE_PRODUCTS_PATH", str(Path.cwd() / "products.yaml"))
+    monkeypatch.setenv("PULSE_ANALYSIS_SIMILARITY_THRESHOLD", "0.8")
+    monkeypatch.setenv("PULSE_ANALYSIS_MIN_CLUSTER_SIZE", "3")
+
+    initialize_database(database_path)
+    catalog = load_product_catalog(Path.cwd() / "products.yaml")
+    sync_products(database_path, catalog)
+    window = build_review_window("2026-W17", 10, "Asia/Calcutta")
+    run = create_or_get_run(database_path, "indmoney", window)
+    upsert_reviews(
+        database_path,
+        [
+            make_review(
+                "csv-r0",
+                "Uploaded csv complaint about slow login flow topic 0",
+                1,
+                source="csv-upload-test",
+            ),
+            make_review(
+                "csv-r1",
+                "Uploaded csv issue with account setup journey topic 1",
+                2,
+                source="csv-upload-test",
+            ),
+            make_review(
+                "csv-r2",
+                "Uploaded csv praise for portfolio tracking clarity topic 2",
+                5,
+                source="csv-upload-test",
+            ),
+            make_review(
+                "csv-r3",
+                "Uploaded csv compliment about reporting export speed topic 3",
+                4,
+                source="csv-upload-test",
+            ),
+            make_review(
+                "csv-r4",
+                "Uploaded csv neutral note about dashboard labels topic 4",
+                3,
+                source="csv-upload-test",
+            ),
+            make_review(
+                "csv-r5",
+                "Uploaded csv neutral feedback about notification timing topic 5",
+                3,
+                source="csv-upload-test",
+            ),
+        ],
+    )
+    settings = load_runtime_settings()
+
+    monkeypatch.setattr(
+        "agent.analysis.service.load_embedding_provider",
+        lambda _settings: NoisyCsvEmbeddingProvider(),
+    )
+
+    result = analyze_run(settings=settings, database_path=database_path, run=run)
+
+    assert result.clusters_formed == 3
+    assert result.noise_reviews == 0
+    assert sorted(cluster.review_count for cluster in result.clusters) == [2, 2, 2]
+    assert all(not cluster.noise for cluster in result.clusters)

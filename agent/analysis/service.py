@@ -4,7 +4,7 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from agent.analysis.clustering import ClusterInput, build_clusters
+from agent.analysis.clustering import ClusterInput, build_clusters, build_csv_fallback_clusters
 from agent.analysis.embeddings import embedding_sha1, load_embedding_provider
 from agent.analysis.preprocess import preprocess_reviews
 from agent.config import RuntimeSettings
@@ -32,7 +32,8 @@ def analyze_run(
             reviews,
             min_review_length=settings.analysis_min_review_length,
         )
-        if len(eligible_reviews) < settings.analysis_min_cluster_size:
+        is_csv_upload_run = _is_csv_upload_run(reviews)
+        if len(eligible_reviews) < settings.analysis_min_cluster_size and not is_csv_upload_run:
             msg = "Insufficient eligible reviews for analysis"
             raise RuntimeError(msg)
 
@@ -69,6 +70,11 @@ def analyze_run(
             similarity_threshold=settings.analysis_similarity_threshold,
             min_cluster_size=settings.analysis_min_cluster_size,
         )
+        if not clustering_output.clusters and is_csv_upload_run:
+            clustering_output = build_csv_fallback_clusters(
+                run_id=run.run_id,
+                inputs=inputs,
+            )
         if not clustering_output.clusters:
             msg = "Analysis produced only noise clusters"
             raise RuntimeError(msg)
@@ -98,6 +104,12 @@ def analyze_run(
     except Exception as exc:
         update_run_status(database_path, run.run_id, RunStatus.FAILED, error_message=str(exc))
         raise
+
+
+def _is_csv_upload_run(reviews: Sequence[object]) -> bool:
+    return bool(reviews) and all(
+        getattr(review, "source", "").startswith("csv-upload-") for review in reviews
+    )
 
 
 def _write_analysis_artifact(
